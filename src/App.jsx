@@ -173,25 +173,6 @@ function CustomCursor() {
   );
 }
 
-function Jellyfish({ y, delay }) {
-  return (
-    <div style={{
-      position: "absolute", top: y, left: 0, width: "100%", height: 60,
-      pointerEvents: "none", zIndex: 4,
-      animation: `swimAcross 30s linear ${delay}s infinite`,
-    }}>
-      <svg width="50" height="80" viewBox="0 0 50 80" style={{ filter: "drop-shadow(0 0 8px rgba(0,229,255,0.6))" }}>
-        <ellipse cx="25" cy="20" rx="20" ry="16" fill="rgba(0,229,255,0.25)" stroke="rgba(0,229,255,0.5)" strokeWidth="1">
-          <animate attributeName="ry" values="16;13;16" dur="2s" repeatCount="indefinite" />
-        </ellipse>
-        <path d="M10,30 Q12,55 8,75 M18,32 Q16,60 14,78 M25,33 Q25,62 25,78 M32,32 Q34,60 36,78 M40,30 Q38,55 42,75"
-          stroke="rgba(0,229,255,0.4)" strokeWidth="1" fill="none">
-          <animate attributeName="opacity" values="0.4;0.7;0.4" dur="2s" repeatCount="indefinite" />
-        </path>
-      </svg>
-    </div>
-  );
-}
 
 function ProductCard({ p, idx, seen }) {
   const [hov, setHov] = useState(false);
@@ -246,6 +227,18 @@ function ProductCard({ p, idx, seen }) {
         transition: "background 0.4s",
       }} />
     </div>
+  );
+}
+
+function FilmGrain() {
+  return (
+    <svg style={{ position: "fixed", inset: 0, zIndex: 50, pointerEvents: "none", opacity: 0.07, mixBlendMode: "overlay", width: "100vw", height: "100vh" }}>
+      <filter id="grainF">
+        <feTurbulence baseFrequency="2.5" numOctaves="3" stitchTiles="stitch" seed="2" />
+        <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0" />
+      </filter>
+      <rect width="100%" height="100%" filter="url(#grainF)" />
+    </svg>
   );
 }
 
@@ -416,18 +409,18 @@ function WaterSurface() {
     }}>
       <defs>
         <linearGradient id="wsg" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="rgba(255,255,255,0.5)" />
-          <stop offset="40%" stopColor="rgba(79,195,247,0.85)" />
-          <stop offset="100%" stopColor="#4FC3F7" />
+          <stop offset="0%" stopColor="rgba(255,255,255,0.15)" />
+          <stop offset="40%" stopColor="rgba(8,30,50,0.7)" />
+          <stop offset="100%" stopColor="#04101c" />
         </linearGradient>
       </defs>
-      <path fill="url(#wsg)" opacity="0.6">
+      <path fill="url(#wsg)" opacity="0.8">
         <animate attributeName="d" dur="7s" repeatCount="indefinite"
           values="M0,40 Q360,90 720,50 T1440,55 L1440,140 L0,140 Z;
                   M0,55 Q360,30 720,70 T1440,40 L1440,140 L0,140 Z;
                   M0,40 Q360,90 720,50 T1440,55 L1440,140 L0,140 Z" />
       </path>
-      <path fill="#4FC3F7">
+      <path fill="#03101c">
         <animate attributeName="d" dur="5s" repeatCount="indefinite"
           values="M0,75 Q360,55 720,80 T1440,70 L1440,140 L0,140 Z;
                   M0,70 Q360,90 720,60 T1440,85 L1440,140 L0,140 Z;
@@ -528,6 +521,7 @@ export default function App() {
       <BubbleField />
       <DepthMeter depth={depth} />
       <CustomCursor />
+      <FilmGrain />
 
       <nav style={{
         position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
@@ -554,19 +548,12 @@ export default function App() {
 
       {/* HERO */}
       <section style={{ height: "100vh", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+        {/* subtle moonlit glow from above (no more sunny sky) */}
         <div style={{
-          position: "absolute", width: 240, height: 240, borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(255,240,200,0.9), rgba(255,200,140,0.4) 50%, transparent 70%)",
-          right: "10%", top: "12%",
-          transform: `translateY(${scrollY * 0.4}px) translate(${mouse.x * 20}px, ${mouse.y * 20}px)`,
-          filter: "blur(8px)",
+          position: "absolute", width: "100%", height: "60%", top: 0, left: 0,
+          background: "radial-gradient(ellipse 1200px 400px at 50% -100px, rgba(120,200,230,0.15), transparent 70%)",
+          pointerEvents: "none",
         }} />
-        <div style={{ position: "absolute", left: "5%", top: "20%", color: "rgba(255,255,255,0.4)", fontSize: 80,
-          transform: `translateX(${scrollY * -0.2}px)`, filter: "blur(2px)",
-        }}>☁</div>
-        <div style={{ position: "absolute", right: "20%", top: "40%", color: "rgba(255,255,255,0.3)", fontSize: 60,
-          transform: `translateX(${scrollY * -0.3}px)`, filter: "blur(1px)",
-        }}>☁</div>
 
         <div style={{
           position: "absolute", top: 100, left: "50%", transform: "translateX(-50%)",
@@ -645,7 +632,6 @@ export default function App() {
             Most brands let you sample the drip. We push you in head first. The deeper you go, the wetter you get.
           </p>
         </div>
-        <Jellyfish y="20%" delay="0" />
       </section>
 
       {/* DROP 001 */}
@@ -737,7 +723,6 @@ export default function App() {
             — D × D / 2026
           </div>
         </div>
-        <Jellyfish y="60%" delay="6" />
       </section>
 
       {/* FEATURED */}
