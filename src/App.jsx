@@ -251,161 +251,84 @@ function ProductCard({ p, idx, seen }) {
 
 function OceanFloor() {
   return (
-    <svg viewBox="0 0 1440 700" preserveAspectRatio="xMidYMax meet" style={{ width: "100%", height: "auto", display: "block" }}>
-      <defs>
-        <linearGradient id="sand" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#3d2a1c" />
-          <stop offset="100%" stopColor="#0a0503" />
-        </linearGradient>
-        <linearGradient id="blade" x1="0" y1="1" x2="0" y2="0">
-          <stop offset="0%" stopColor="#5a6770" />
-          <stop offset="50%" stopColor="#aab5bd" />
-          <stop offset="100%" stopColor="#e8eef2" />
-        </linearGradient>
-        <radialGradient id="gold">
-          <stop offset="0%" stopColor="#ffe680" />
-          <stop offset="100%" stopColor="#b8862b" />
-        </radialGradient>
-        <filter id="cyanGlow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="4" result="blur" />
-          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-        <filter id="goldGlow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="2" result="blur" />
-          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-      </defs>
+    <div style={{ position:"relative", width:"100%", minHeight:"90vh", background:"#000", overflow:"hidden" }}>
+      {/* Underwater bg photo */}
+      <div style={{
+        position:"absolute", inset:0,
+        backgroundImage:"url(https://images.unsplash.com/photo-1464925257126-6450e871c667?w=1920&q=85&auto=format&fit=crop)",
+        backgroundSize:"cover", backgroundPosition:"center",
+        opacity:0.32, filter:"brightness(0.4) contrast(1.2) saturate(0.55)",
+      }} />
+      {/* Dark gradient overlays */}
+      <div style={{ position:"absolute", inset:0, background:"linear-gradient(180deg,rgba(0,0,0,.72) 0%,rgba(0,0,0,.28) 30%,rgba(0,0,0,.5) 65%,rgba(0,0,0,.96) 100%)" }} />
+      <div style={{ position:"absolute", top:0, left:0, right:0, height:"40%", background:"radial-gradient(ellipse 1000px 500px at 50% 0%,rgba(0,229,255,.06),transparent 70%)" }} />
 
-      <g opacity="0.15">
-        <polygon points="200,0 250,0 400,700 350,700" fill="rgba(0,229,255,0.4)" />
-        <polygon points="700,0 760,0 900,700 840,700" fill="rgba(0,229,255,0.3)" />
-        <polygon points="1100,0 1150,0 1280,700 1230,700" fill="rgba(0,229,255,0.4)" />
-      </g>
+      {/* Warm gold glow from chest */}
+      <div style={{
+        position:"absolute", left:"50%", bottom:"4%", transform:"translateX(-50%)",
+        width:"min(900px,95vw)", height:"58vh",
+        background:"radial-gradient(ellipse at center 78%,rgba(255,162,60,.42),rgba(255,120,40,.14) 30%,transparent 65%)",
+        filter:"blur(55px)", pointerEvents:"none", zIndex:2,
+      }} />
 
-      <path d="M0,420 Q200,380 380,410 Q580,440 800,415 Q1000,395 1200,420 Q1340,435 1440,415 L1440,700 L0,700 Z" fill="url(#sand)" />
-      <path d="M0,420 Q200,380 380,410 Q580,440 800,415 Q1000,395 1200,420 Q1340,435 1440,415" fill="none" stroke="rgba(255,200,140,0.15)" strokeWidth="1" />
-
-      {Array.from({ length: 40 }).map((_, i) => (
-        <circle key={`s${i}`} cx={(i * 73) % 1440} cy={420 + ((i * 47) % 280)}
-          r={(i % 3) * 0.5 + 0.5} fill="rgba(255,200,140,0.2)" />
-      ))}
-
-      <g transform="translate(120,420)">
-        <path d="M0,0 Q-15,-60 8,-130 Q-10,-200 12,-270" stroke="#0a3a1f" strokeWidth="6" fill="none" strokeLinecap="round">
-          <animateTransform attributeName="transform" type="rotate" values="-4 0 0; 4 0 0; -4 0 0" dur="5s" repeatCount="indefinite" />
-        </path>
-        <path d="M20,0 Q5,-50 25,-110 Q12,-180 30,-240" stroke="#0d4624" strokeWidth="5" fill="none" strokeLinecap="round">
-          <animateTransform attributeName="transform" type="rotate" values="3 20 0; -3 20 0; 3 20 0" dur="4.5s" repeatCount="indefinite" />
-        </path>
-      </g>
-
-      <g transform="translate(1280,420)">
-        <path d="M0,0 Q15,-70 -8,-150 Q12,-220 -10,-290" stroke="#0a3a1f" strokeWidth="6" fill="none" strokeLinecap="round">
-          <animateTransform attributeName="transform" type="rotate" values="4 0 0; -4 0 0; 4 0 0" dur="5.5s" repeatCount="indefinite" />
-        </path>
-      </g>
-
-      <g filter="url(#goldGlow)">
-        <ellipse cx="380" cy="488" rx="14" ry="4" fill="url(#gold)" />
-        <ellipse cx="405" cy="495" rx="14" ry="4" fill="url(#gold)" />
-        <ellipse cx="358" cy="498" rx="13" ry="4" fill="url(#gold)" />
-        <ellipse cx="395" cy="478" rx="14" ry="4" fill="url(#gold)" />
-        <ellipse cx="1080" cy="510" rx="13" ry="4" fill="url(#gold)" />
-        <ellipse cx="1110" cy="505" rx="14" ry="4" fill="url(#gold)" />
-        <ellipse cx="1095" cy="520" rx="12" ry="3" fill="url(#gold)" />
-      </g>
-
-      <g transform="translate(280,470)" filter="url(#goldGlow)">
-        {Array.from({ length: 12 }).map((_, i) => (
-          <ellipse key={i} cx={i * 6 - 30} cy={Math.sin(i) * 4} rx="8" ry="4" fill="none" stroke="#ffd966" strokeWidth="2" opacity="0.9" />
+      {/* Scattered coins */}
+      <svg style={{ position:"absolute", left:0, bottom:0, width:"100%", height:"28%", zIndex:2, pointerEvents:"none" }} viewBox="0 0 1440 300" preserveAspectRatio="none">
+        <defs>
+          <radialGradient id="gc" cx=".35" cy=".3">
+            <stop offset="0%" stopColor="#fff5b8"/><stop offset="50%" stopColor="#ffd966"/><stop offset="100%" stopColor="#7a4a08"/>
+          </radialGradient>
+        </defs>
+        {[[155,242],[188,254],[130,260],[218,270],[1182,242],[1224,256],[1262,247],[1292,268],[318,278],[1088,282],[420,290],[950,285],[600,275],[800,265]].map(([cx,cy],i)=>(
+          <ellipse key={i} cx={cx} cy={cy} rx={i%3===0?14:12} ry={3.8} fill="url(#gc)" />
         ))}
-        {Array.from({ length: 10 }).map((_, i) => (
-          <ellipse key={`b${i}`} cx={i * 6 - 25 + 3} cy={Math.cos(i) * 3 + 6} rx="8" ry="4" fill="none" stroke="#e6b84d" strokeWidth="2" opacity="0.85" />
-        ))}
-      </g>
+      </svg>
 
-      <g transform="translate(1020,440)">
-        <rect x="-50" y="0" width="100" height="50" fill="#3a2410" stroke="#1a0e05" strokeWidth="2" />
-        <rect x="-50" y="-25" width="100" height="30" fill="#4a2e16" stroke="#1a0e05" strokeWidth="2" rx="2" />
-        <rect x="-50" y="-2" width="100" height="6" fill="#b8862b" />
-        <rect x="-3" y="14" width="6" height="14" fill="#ffd966" filter="url(#goldGlow)" />
-        <rect x="-46" y="-22" width="92" height="22" fill="rgba(255,217,102,0.3)" />
-      </g>
+      {/* Sword half-sunk */}
+      <svg style={{ position:"absolute", left:"10%", bottom:"12%", width:"min(100px,10vw)", height:"auto", zIndex:2, filter:"drop-shadow(0 6px 14px rgba(0,0,0,.75))" }} viewBox="0 0 100 280">
+        <defs>
+          <linearGradient id="bl" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#22292f"/><stop offset="50%" stopColor="#8a939c"/><stop offset="100%" stopColor="#22292f"/>
+          </linearGradient>
+        </defs>
+        <ellipse cx="50" cy="178" rx="30" ry="5" fill="rgba(32,18,8,.9)"/>
+        <path d="M30 176 Q50 167 70 176 L70 182 L30 182Z" fill="rgba(55,35,18,.65)"/>
+        <polygon points="44,18 50,8 56,18 56,178 50,180 44,178" fill="url(#bl)" stroke="#0a0a0a" strokeWidth=".4"/>
+        <line x1="50" y1="20" x2="50" y2="176" stroke="rgba(255,255,255,.32)" strokeWidth=".6"/>
+        <rect x="34" y="14" width="32" height="6" fill="#362616" rx="1"/>
+        <rect x="46" y="0" width="8" height="14" fill="#1a0e05"/>
+        <circle cx="50" cy="0" r="3.5" fill="#2a1810"/>
+      </svg>
 
-      <g transform="translate(560,400) rotate(-25)">
-        <line x1="0" y1="-60" x2="0" y2="40" stroke="#3a4248" strokeWidth="6" strokeLinecap="round" />
-        <circle cx="0" cy="-65" r="10" fill="none" stroke="#3a4248" strokeWidth="5" />
-        <path d="M-30,40 Q-30,65 0,55 Q30,65 30,40" fill="none" stroke="#3a4248" strokeWidth="6" strokeLinecap="round" />
-        <line x1="-15" y1="-15" x2="15" y2="-15" stroke="#3a4248" strokeWidth="5" />
-      </g>
+      {/* Treasure chest photo */}
+      <div style={{
+        position:"absolute", left:"50%", bottom:0, transform:"translateX(-50%)",
+        width:"min(680px,76vw)", height:"min(460px,54vh)",
+        backgroundImage:"url(https://images.unsplash.com/photo-1632809199725-72a4245e846b?w=1600&q=85&auto=format&fit=crop)",
+        backgroundSize:"contain", backgroundRepeat:"no-repeat", backgroundPosition:"center bottom",
+        filter:"brightness(.88) contrast(1.1) saturate(1.05)", zIndex:3,
+      }}/>
 
-      {/* SWORD */}
-      <g transform="translate(450,440) rotate(18)" filter="url(#cyanGlow)">
-        <path d="M-7,0 L-9,-200 L0,-220 L9,-200 L7,0 Z" fill="url(#blade)" stroke="#1a1a1a" strokeWidth="0.5" />
-        <path d="M0,0 L0,-218" stroke="rgba(255,255,255,0.5)" strokeWidth="1" />
-        <rect x="-32" y="-3" width="64" height="9" fill="#5a4a30" stroke="#2a1f10" strokeWidth="1" />
-        <circle cx="-28" cy="1.5" r="3" fill="url(#gold)" />
-        <circle cx="28" cy="1.5" r="3" fill="url(#gold)" />
-        <rect x="-5" y="6" width="10" height="42" fill="#2a1810" />
-        <line x1="-5" y1="14" x2="5" y2="14" stroke="#5a3a20" strokeWidth="1" />
-        <line x1="-5" y1="22" x2="5" y2="22" stroke="#5a3a20" strokeWidth="1" />
-        <line x1="-5" y1="30" x2="5" y2="30" stroke="#5a3a20" strokeWidth="1" />
-        <line x1="-5" y1="38" x2="5" y2="38" stroke="#5a3a20" strokeWidth="1" />
-        <circle cx="0" cy="52" r="9" fill="url(#gold)" stroke="#5a3f0f" strokeWidth="1" />
-        <ellipse cx="0" cy="-100" rx="20" ry="100" fill="rgba(0,229,255,0.15)" />
-      </g>
+      {/* CHARACTER IMAGE — sitting on chest, dark bg blended out with screen mode */}
+      <img
+        src="/character.png"
+        alt=""
+        style={{
+          position:"absolute",
+          left:"50%",
+          bottom:"calc(min(460px, 54vh) - 95px)",
+          transform:"translateX(-50%)",
+          width:"min(340px, 36vw)",
+          height:"auto",
+          zIndex:5,
+          mixBlendMode:"screen",
+          filter:"brightness(1.05) contrast(1.1) saturate(0.9)",
+          pointerEvents:"none",
+        }}
+      />
 
-      {/* HOODED FIGURE */}
-      <g transform="translate(720,420)">
-        <ellipse cx="0" cy="120" rx="120" ry="14" fill="rgba(0,0,0,0.6)" />
-        <path d="M-95,30 L-105,120 L105,120 L95,30 Q70,-10 0,-20 Q-70,-10 -95,30 Z" fill="#0a0d10" stroke="#1a2024" strokeWidth="1" />
-        <path d="M-95,30 Q-50,15 0,15 Q50,15 95,30" fill="none" stroke="#1a2024" strokeWidth="1" />
-        <path d="M-30,30 Q-40,80 -25,115 L25,115 Q40,80 30,30 Z" fill="#040608" />
-        <path d="M-65,-30 Q-80,30 -55,60 L55,60 Q80,30 65,-30 Q60,-50 0,-55 Q-60,-50 -65,-30 Z" fill="#050709" />
-        <path d="M-65,-5 Q-90,30 -75,55 Q-50,55 -45,40 Q-50,15 -50,-10 Z" fill="#040608" />
-        <path d="M65,-5 Q90,30 75,55 Q50,55 45,40 Q50,15 50,-10 Z" fill="#040608" />
-        <path d="M-50,-60 Q-70,-100 0,-110 Q70,-100 50,-60 Q55,-40 45,-30 Q35,-25 0,-25 Q-35,-25 -45,-30 Q-55,-40 -50,-60 Z" fill="#020304" stroke="#0a0d10" strokeWidth="1" />
-        <ellipse cx="0" cy="-55" rx="20" ry="24" fill="#000000" />
-        <ellipse cx="-7" cy="-58" rx="2.5" ry="1.5" fill="#00E5FF" filter="url(#cyanGlow)">
-          <animate attributeName="opacity" values="1;0.3;1" dur="4s" repeatCount="indefinite" />
-        </ellipse>
-        <ellipse cx="7" cy="-58" rx="2.5" ry="1.5" fill="#00E5FF" filter="url(#cyanGlow)">
-          <animate attributeName="opacity" values="1;0.3;1" dur="4s" repeatCount="indefinite" />
-        </ellipse>
-        <g filter="url(#goldGlow)">
-          <path d="M-25,-25 Q0,-15 25,-25 Q15,-5 0,0 Q-15,-5 -25,-25 Z" fill="none" stroke="#ffd966" strokeWidth="1.5" />
-          <circle cx="0" cy="-2" r="3" fill="url(#gold)" />
-        </g>
-        <g opacity="0.8">
-          {[0, 1, 2, 3, 4].map((i) => (
-            <circle key={i} cx={-30 + i * 15} cy={62 + (i % 2) * 5} r="2" fill="#00E5FF" filter="url(#cyanGlow)">
-              <animate attributeName="cy" values={`${62 + (i % 2) * 5};${75 + (i % 2) * 5}`} dur={`${1.2 + i * 0.2}s`} repeatCount="indefinite" />
-              <animate attributeName="opacity" values="0.9;0" dur={`${1.2 + i * 0.2}s`} repeatCount="indefinite" />
-            </circle>
-          ))}
-        </g>
-      </g>
-
-      <g transform="translate(820,500)" opacity="0.85">
-        <ellipse cx="0" cy="0" rx="14" ry="12" fill="#dadcdf" />
-        <ellipse cx="-5" cy="-1" rx="3" ry="4" fill="#0a0a0a" />
-        <ellipse cx="5" cy="-1" rx="3" ry="4" fill="#0a0a0a" />
-        <path d="M-3,7 L-4,11 M0,7 L0,11 M3,7 L4,11" stroke="#0a0a0a" strokeWidth="1" />
-        <path d="M-9,8 Q0,14 9,8" stroke="#0a0a0a" strokeWidth="0.5" fill="none" />
-      </g>
-
-      <circle cx="200" cy="510" r="4" fill="#f5e8d0" opacity="0.7" />
-      <circle cx="220" cy="525" r="3" fill="#f5e8d0" opacity="0.6" />
-      <circle cx="850" cy="525" r="4" fill="#f5e8d0" opacity="0.7" />
-      <path d="M650,500 Q655,490 660,500 L660,510 L650,510 Z" fill="#d8b88a" />
-
-      {Array.from({ length: 6 }).map((_, i) => (
-        <circle key={`bb${i}`} cx={680 + i * 14} cy="380" r={1 + (i % 2)} fill="rgba(255,255,255,0.7)">
-          <animate attributeName="cy" values="380;100" dur={`${4 + i}s`} repeatCount="indefinite" />
-          <animate attributeName="opacity" values="0.7;0" dur={`${4 + i}s`} repeatCount="indefinite" />
-        </circle>
-      ))}
-    </svg>
+      {/* Edge vignette */}
+      <div style={{ position:"absolute", inset:0, boxShadow:"inset 0 0 240px 90px #000", pointerEvents:"none", zIndex:8 }}/>
+    </div>
   );
 }
 
