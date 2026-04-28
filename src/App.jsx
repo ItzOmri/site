@@ -1,889 +1,523 @@
 import { useState, useEffect, useRef } from "react";
 
-// ─── DEPTH COLOR INTERPOLATION ────────────────────────────────────────
-const STOPS = [
-  { p: 0.00, c: [255, 200, 140] },
-  { p: 0.04, c: [135, 206, 235] },
-  { p: 0.10, c: [120, 200, 230] },
-  { p: 0.13, c: [79, 195, 247] },
-  { p: 0.30, c: [0, 172, 193] },
-  { p: 0.50, c: [0, 90, 110] },
-  { p: 0.70, c: [0, 40, 58] },
-  { p: 0.85, c: [0, 18, 28] },
-  { p: 1.00, c: [0, 3, 8] },
-];
+// ── helpers ───────────────────────────────────────────────────────────
 const lerp = (a, b, t) => a + (b - a) * t;
-function depthRGB(p) {
-  for (let i = 0; i < STOPS.length - 1; i++) {
-    if (p >= STOPS[i].p && p <= STOPS[i + 1].p) {
-      const t = (p - STOPS[i].p) / (STOPS[i + 1].p - STOPS[i].p);
-      return [
-        Math.round(lerp(STOPS[i].c[0], STOPS[i + 1].c[0], t)),
-        Math.round(lerp(STOPS[i].c[1], STOPS[i + 1].c[1], t)),
-        Math.round(lerp(STOPS[i].c[2], STOPS[i + 1].c[2], t)),
-      ];
+const cl = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
+
+// Background: pure white → cool grey → water teal → deep blue → black
+const BG = [
+  [0.00, [255, 255, 255]],
+  [0.22, [228, 230, 232]],
+  [0.42, [95, 158, 190]],
+  [0.62, [12, 60, 100]],
+  [0.82, [2, 12, 26]],
+  [1.00, [0, 0, 0]],
+];
+function bgRGB(p) {
+  for (let i = 0; i < BG.length - 1; i++) {
+    const [p0, c0] = BG[i], [p1, c1] = BG[i + 1];
+    if (p <= p1) {
+      const t = (p - p0) / (p1 - p0);
+      return c0.map((a, j) => Math.round(lerp(a, c1[j], t)));
     }
   }
-  return STOPS[STOPS.length - 1].c;
+  return [0, 0, 0];
+}
+// Foreground: dark (#1e1e1e) on white → white on dark
+function foreRGB(depth) {
+  const t = cl(depth / 0.28);
+  return `rgb(${Math.round(lerp(30, 255, t))},${Math.round(lerp(30, 255, t))},${Math.round(lerp(30, 255, t))})`;
+}
+// Drip: grey (#707070) → white
+function dripColor(depth) {
+  const t = cl((depth - 0.14) / 0.28);
+  const v = Math.round(lerp(100, 255, t));
+  return `rgb(${v},${v},${v})`;
 }
 
-function useReveal(threshold = 0.15) {
-  const ref = useRef(null);
-  const [seen, setSeen] = useState(false);
-  useEffect(() => {
-    const obs = new IntersectionObserver(
-      ([e]) => { if (e.isIntersecting) setSeen(true); },
-      { threshold }
-    );
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, [threshold]);
-  return [ref, seen];
+// ── film grain ────────────────────────────────────────────────────────
+function FilmGrain() {
+  return (
+    <svg style={{ position: "fixed", inset: 0, zIndex: 50, pointerEvents: "none", opacity: 0.065, mixBlendMode: "overlay", width: "100vw", height: "100vh" }}>
+      <filter id="grain">
+        <feTurbulence baseFrequency="2.5" numOctaves="3" stitchTiles="stitch" />
+        <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0" />
+      </filter>
+      <rect width="100%" height="100%" filter="url(#grain)" />
+    </svg>
+  );
 }
 
-// ─── BUBBLE FIELD ─────────────────────────────────────────────────────
-function BubbleField() {
+// ── bubbles (only shows when deep) ───────────────────────────────────
+function BubbleField({ depth }) {
   const ref = useRef(null);
   useEffect(() => {
     const canvas = ref.current;
+    if (!canvas) return;
     const ctx = canvas.getContext("2d");
-    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = () => window.innerWidth, H = () => window.innerHeight;
     const resize = () => {
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = window.innerWidth * dpr;
-      canvas.height = window.innerHeight * dpr;
-      canvas.style.width = window.innerWidth + "px";
-      canvas.style.height = window.innerHeight + "px";
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.scale(dpr, dpr);
+      const dpr = Math.min(devicePixelRatio || 1, 2);
+      canvas.width = W() * dpr; canvas.height = H() * dpr;
+      canvas.style.width = W() + "px"; canvas.style.height = H() + "px";
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.scale(dpr, dpr);
     };
     resize();
     window.addEventListener("resize", resize);
-
-    const W = () => window.innerWidth;
-    const H = () => window.innerHeight;
-    const bubbles = Array.from({ length: 90 }, () => ({
-      x: Math.random() * W(),
-      y: Math.random() * H(),
-      r: Math.random() * 5 + 1,
-      vy: -(Math.random() * 1.2 + 0.4),
-      seed: Math.random() * 100,
-      o: Math.random() * 0.4 + 0.15,
+    const bs = Array.from({ length: 55 }, () => ({
+      x: Math.random() * W(), y: Math.random() * H(),
+      r: Math.random() * 4 + 1, vy: -(Math.random() * 1 + 0.3),
+      seed: Math.random() * 100, o: Math.random() * 0.4 + 0.15,
     }));
-
     let raf;
     const tick = () => {
       ctx.clearRect(0, 0, W(), H());
-      const docH = document.documentElement.scrollHeight - H();
-      const depth = docH > 0 ? Math.min(1, Math.max(0, window.scrollY / docH)) : 0;
-      const intensity = Math.min(1, depth * 1.4 + 0.05);
-
-      bubbles.forEach((b) => {
-        b.y += b.vy * (0.5 + intensity);
-        b.x += Math.sin((b.y + b.seed) * 0.012) * 0.6;
-        if (b.y < -10) { b.y = H() + 10; b.x = Math.random() * W(); }
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255,255,255,${b.o * intensity * 0.4})`;
-        ctx.fill();
-        ctx.strokeStyle = `rgba(255,255,255,${b.o * intensity})`;
-        ctx.lineWidth = 0.7;
-        ctx.stroke();
-      });
+      const intensity = cl((depth - 0.4) / 0.25);
+      if (intensity > 0) {
+        bs.forEach(b => {
+          b.y += b.vy * (0.5 + intensity);
+          b.x += Math.sin((b.y + b.seed) * 0.012) * 0.5;
+          if (b.y < -10) { b.y = H() + 10; b.x = Math.random() * W(); }
+          ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255,255,255,${b.o * intensity * 0.3})`; ctx.fill();
+          ctx.strokeStyle = `rgba(255,255,255,${b.o * intensity * 0.85})`; ctx.lineWidth = 0.7; ctx.stroke();
+        });
+      }
       raf = requestAnimationFrame(tick);
     };
     tick();
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
-  }, []);
+  }, [depth]);
   return <canvas ref={ref} style={{ position: "fixed", top: 0, left: 0, pointerEvents: "none", zIndex: 3 }} />;
 }
 
-function Caustics({ depth }) {
-  const opacity = Math.max(0, 0.5 - Math.abs(depth - 0.25) * 1.5);
-  return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 2, pointerEvents: "none",
-      opacity, mixBlendMode: "soft-light",
-      background: "radial-gradient(ellipse 800px 400px at 30% 0%, rgba(255,255,255,0.6), transparent 60%), radial-gradient(ellipse 600px 300px at 70% 0%, rgba(255,255,255,0.4), transparent 60%)",
-      animation: "causticShift 8s ease-in-out infinite alternate",
-    }} />
-  );
-}
-
-function DepthMeter({ depth }) {
-  const meters = Math.round(depth * 1500);
-  return (
-    <div style={{
-      position: "fixed", right: 24, top: "50%", transform: "translateY(-50%)",
-      zIndex: 60, color: "white", fontFamily: "'JetBrains Mono', monospace",
-      fontSize: 9, letterSpacing: "0.25em", textAlign: "right",
-      mixBlendMode: "difference", pointerEvents: "none",
-    }}>
-      <div style={{ marginBottom: 6, opacity: 0.55 }}>DEPTH</div>
-      <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "0.05em", fontVariantNumeric: "tabular-nums" }}>
-        {String(meters).padStart(4, "0")}m
-      </div>
-      <div style={{ width: 2, height: 220, background: "rgba(255,255,255,0.2)", marginTop: 14, marginLeft: "auto", position: "relative" }}>
-        <div style={{
-          position: "absolute", left: -3, top: `${depth * 100}%`,
-          width: 8, height: 8, background: "#00E5FF", borderRadius: "50%",
-          boxShadow: "0 0 12px #00E5FF, 0 0 24px #00E5FF", transform: "translateY(-50%)",
-        }} />
-      </div>
-      <div style={{ marginTop: 10, fontSize: 8, opacity: 0.5 }}>
-        {depth < 0.13 ? "SURFACE" : depth < 0.4 ? "EUPHOTIC" : depth < 0.7 ? "MESOPELAGIC" : depth < 0.9 ? "BATHYPELAGIC" : "ABYSS"}
-      </div>
-    </div>
-  );
-}
-
+// ── custom cursor (desktop) ───────────────────────────────────────────
 function CustomCursor() {
-  const dot = useRef(null);
-  const ring = useRef(null);
+  const dot = useRef(null), ring = useRef(null);
   useEffect(() => {
-    if (window.matchMedia("(max-width: 768px)").matches) return;
-    const move = (e) => {
-      if (dot.current) { dot.current.style.left = e.clientX + "px"; dot.current.style.top = e.clientY + "px"; }
-      if (ring.current) { ring.current.style.left = e.clientX + "px"; ring.current.style.top = e.clientY + "px"; }
+    if (window.matchMedia("(max-width:768px)").matches) return;
+    const mv = e => {
+      [dot, ring].forEach(r => { if (r.current) { r.current.style.left = e.clientX + "px"; r.current.style.top = e.clientY + "px"; } });
     };
-    const click = (e) => {
-      const r = document.createElement("div");
-      r.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;width:10px;height:10px;border:2px solid #00E5FF;border-radius:50%;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);animation:rippleOut 0.8s ease-out forwards;`;
-      document.body.appendChild(r);
-      setTimeout(() => r.remove(), 800);
+    const cl = e => {
+      const el = document.createElement("div");
+      el.style.cssText = `position:fixed;left:${e.clientX}px;top:${e.clientY}px;width:10px;height:10px;border:2px solid #00E5FF;border-radius:50%;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);animation:rippleOut 0.8s ease-out forwards;`;
+      document.body.appendChild(el); setTimeout(() => el.remove(), 800);
     };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("click", click);
-    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("click", click); };
+    window.addEventListener("mousemove", mv); window.addEventListener("click", cl);
+    return () => { window.removeEventListener("mousemove", mv); window.removeEventListener("click", cl); };
   }, []);
   return (
     <>
-      <div ref={dot} className="desktop-only" style={{
-        position: "fixed", width: 6, height: 6, background: "#00E5FF",
-        borderRadius: "50%", pointerEvents: "none", zIndex: 9999,
-        transform: "translate(-50%,-50%)", boxShadow: "0 0 8px #00E5FF",
-        mixBlendMode: "screen",
-      }} />
-      <div ref={ring} className="desktop-only" style={{
-        position: "fixed", width: 32, height: 32, border: "1px solid rgba(0,229,255,0.5)",
-        borderRadius: "50%", pointerEvents: "none", zIndex: 9999,
-        transform: "translate(-50%,-50%)",
-      }} />
+      <div ref={dot} style={{ position: "fixed", width: 6, height: 6, background: "#00E5FF", borderRadius: "50%", pointerEvents: "none", zIndex: 9999, transform: "translate(-50%,-50%)", boxShadow: "0 0 8px #00E5FF", mixBlendMode: "screen" }} />
+      <div ref={ring} style={{ position: "fixed", width: 32, height: 32, border: "1px solid rgba(0,229,255,0.5)", borderRadius: "50%", pointerEvents: "none", zIndex: 9999, transform: "translate(-50%,-50%)" }} />
     </>
   );
 }
 
-
-function ProductCard({ p, idx, seen }) {
-  const [hov, setHov] = useState(false);
+// ── depth meter ───────────────────────────────────────────────────────
+function DepthMeter({ depth }) {
+  const m = Math.round(depth * 1500);
   return (
-    <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      style={{
-        position: "relative", background: "rgba(0,0,0,0.35)",
-        backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.08)",
-        aspectRatio: "3/4", overflow: "hidden",
-        opacity: seen ? 1 : 0,
-        transform: seen ? `translateY(0) rotate(${idx % 2 === 0 ? -0.5 : 0.5}deg)` : "translateY(60px)",
-        transition: `opacity 0.9s ${idx * 0.15}s, transform 0.9s ${idx * 0.15}s`,
-        animation: seen ? `floatSway 6s ease-in-out ${idx * 0.5}s infinite alternate` : "none",
-      }}>
-      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{
-          fontFamily: "'Anton', sans-serif", fontSize: "clamp(60px, 11vw, 130px)",
-          color: hov ? "rgba(0,229,255,0.3)" : "rgba(255,255,255,0.06)",
-          letterSpacing: "0.02em", lineHeight: 0.85, textAlign: "center",
-          transition: "color 0.4s, transform 0.6s",
-          transform: hov ? "scale(1.08)" : "scale(1)",
-          textShadow: hov ? "0 0 40px rgba(0,229,255,0.5)" : "none",
-        }}>
-          {p.name}
-        </div>
+    <div style={{
+      position: "fixed", right: 22, top: "50%", transform: "translateY(-50%)",
+      zIndex: 60, fontFamily: "'JetBrains Mono',monospace", fontSize: 9,
+      letterSpacing: "0.25em", textAlign: "right", mixBlendMode: "difference",
+      color: "white", pointerEvents: "none",
+      opacity: depth > 0.04 ? 1 : 0, transition: "opacity 0.6s",
+    }}>
+      <div style={{ opacity: 0.5, marginBottom: 5 }}>DEPTH</div>
+      <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+        {String(m).padStart(4, "0")}m
       </div>
-      <div style={{
-        position: "absolute", bottom: 0, left: 0, right: 0, padding: 22,
-        background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent)",
-      }}>
-        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.25em", color: "#00E5FF", marginBottom: 6 }}>
-          {p.tag}
-        </div>
-        <div style={{ fontFamily: "'Anton', sans-serif", fontSize: 30, color: "white", letterSpacing: "0.03em" }}>{p.name}</div>
-        <div style={{
-          display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8,
-          fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.5)",
-        }}>
-          <span>{p.price}</span>
-          <span style={{ color: p.stock === "SOLD OUT" ? "#ff4444" : "#00E5FF" }}>● {p.stock}</span>
-        </div>
+      <div style={{ width: 2, height: 150, background: "rgba(255,255,255,0.2)", marginTop: 10, marginLeft: "auto", position: "relative" }}>
+        <div style={{ position: "absolute", left: -3, top: `${depth * 100}%`, width: 8, height: 8, background: "#00E5FF", borderRadius: "50%", boxShadow: "0 0 10px #00E5FF", transform: "translateY(-50%)" }} />
       </div>
-      <div style={{
-        position: "absolute", top: 16, right: 16,
-        fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.2em",
-        color: "rgba(255,255,255,0.4)", border: "1px solid rgba(255,255,255,0.15)",
-        padding: "4px 8px", background: "rgba(0,0,0,0.4)",
-      }}>#{p.id}</div>
-      <div style={{
-        position: "absolute", inset: 0, pointerEvents: "none",
-        background: hov ? "radial-gradient(circle at 50% 50%, rgba(0,229,255,0.15), transparent 70%)" : "transparent",
-        transition: "background 0.4s",
-      }} />
     </div>
   );
 }
 
-function FilmGrain() {
-  return (
-    <svg style={{ position: "fixed", inset: 0, zIndex: 50, pointerEvents: "none", opacity: 0.07, mixBlendMode: "overlay", width: "100vw", height: "100vh" }}>
-      <filter id="grainF">
-        <feTurbulence baseFrequency="2.5" numOctaves="3" stitchTiles="stitch" seed="2" />
-        <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0" />
-      </filter>
-      <rect width="100%" height="100%" filter="url(#grainF)" />
-    </svg>
-  );
-}
-
+// ── ocean floor scene ─────────────────────────────────────────────────
 function OceanFloor() {
   return (
-    <svg viewBox="0 0 1440 700" preserveAspectRatio="xMidYMax meet" style={{ width: "100%", height: "auto", display: "block" }}>
-      <defs>
-        <linearGradient id="sand" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#3d2a1c" />
-          <stop offset="100%" stopColor="#0a0503" />
-        </linearGradient>
-        <linearGradient id="blade" x1="0" y1="1" x2="0" y2="0">
-          <stop offset="0%" stopColor="#5a6770" />
-          <stop offset="50%" stopColor="#aab5bd" />
-          <stop offset="100%" stopColor="#e8eef2" />
-        </linearGradient>
-        <radialGradient id="gold">
-          <stop offset="0%" stopColor="#ffe680" />
-          <stop offset="100%" stopColor="#b8862b" />
-        </radialGradient>
-        <filter id="cyanGlow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="4" result="blur" />
-          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-        <filter id="goldGlow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="2" result="blur" />
-          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-      </defs>
+    <div style={{ position: "relative", width: "100%", minHeight: "90vh", background: "#000", overflow: "hidden" }}>
+      {/* underwater bg photo */}
+      <div style={{
+        position: "absolute", inset: 0,
+        backgroundImage: "url(https://images.unsplash.com/photo-1464925257126-6450e871c667?w=1920&q=85&auto=format&fit=crop)",
+        backgroundSize: "cover", backgroundPosition: "center",
+        opacity: 0.32, filter: "brightness(0.4) contrast(1.2) saturate(0.55)",
+      }} />
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,rgba(0,0,0,.72) 0%,rgba(0,0,0,.28) 30%,rgba(0,0,0,.5) 65%,rgba(0,0,0,.96) 100%)" }} />
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "40%", background: "radial-gradient(ellipse 1000px 500px at 50% 0%,rgba(0,229,255,.06),transparent 70%)" }} />
 
-      <g opacity="0.15">
-        <polygon points="200,0 250,0 400,700 350,700" fill="rgba(0,229,255,0.4)" />
-        <polygon points="700,0 760,0 900,700 840,700" fill="rgba(0,229,255,0.3)" />
-        <polygon points="1100,0 1150,0 1280,700 1230,700" fill="rgba(0,229,255,0.4)" />
-      </g>
+      {/* gold warmth from chest */}
+      <div style={{
+        position: "absolute", left: "50%", bottom: "4%", transform: "translateX(-50%)",
+        width: "min(900px,95vw)", height: "58vh",
+        background: "radial-gradient(ellipse at center 78%,rgba(255,162,60,.42),rgba(255,120,40,.14) 30%,transparent 65%)",
+        filter: "blur(55px)", pointerEvents: "none", zIndex: 2,
+      }} />
 
-      <path d="M0,420 Q200,380 380,410 Q580,440 800,415 Q1000,395 1200,420 Q1340,435 1440,415 L1440,700 L0,700 Z" fill="url(#sand)" />
-      <path d="M0,420 Q200,380 380,410 Q580,440 800,415 Q1000,395 1200,420 Q1340,435 1440,415" fill="none" stroke="rgba(255,200,140,0.15)" strokeWidth="1" />
-
-      {Array.from({ length: 40 }).map((_, i) => (
-        <circle key={`s${i}`} cx={(i * 73) % 1440} cy={420 + ((i * 47) % 280)}
-          r={(i % 3) * 0.5 + 0.5} fill="rgba(255,200,140,0.2)" />
-      ))}
-
-      <g transform="translate(120,420)">
-        <path d="M0,0 Q-15,-60 8,-130 Q-10,-200 12,-270" stroke="#0a3a1f" strokeWidth="6" fill="none" strokeLinecap="round">
-          <animateTransform attributeName="transform" type="rotate" values="-4 0 0; 4 0 0; -4 0 0" dur="5s" repeatCount="indefinite" />
-        </path>
-        <path d="M20,0 Q5,-50 25,-110 Q12,-180 30,-240" stroke="#0d4624" strokeWidth="5" fill="none" strokeLinecap="round">
-          <animateTransform attributeName="transform" type="rotate" values="3 20 0; -3 20 0; 3 20 0" dur="4.5s" repeatCount="indefinite" />
-        </path>
-      </g>
-
-      <g transform="translate(1280,420)">
-        <path d="M0,0 Q15,-70 -8,-150 Q12,-220 -10,-290" stroke="#0a3a1f" strokeWidth="6" fill="none" strokeLinecap="round">
-          <animateTransform attributeName="transform" type="rotate" values="4 0 0; -4 0 0; 4 0 0" dur="5.5s" repeatCount="indefinite" />
-        </path>
-      </g>
-
-      <g filter="url(#goldGlow)">
-        <ellipse cx="380" cy="488" rx="14" ry="4" fill="url(#gold)" />
-        <ellipse cx="405" cy="495" rx="14" ry="4" fill="url(#gold)" />
-        <ellipse cx="358" cy="498" rx="13" ry="4" fill="url(#gold)" />
-        <ellipse cx="395" cy="478" rx="14" ry="4" fill="url(#gold)" />
-        <ellipse cx="1080" cy="510" rx="13" ry="4" fill="url(#gold)" />
-        <ellipse cx="1110" cy="505" rx="14" ry="4" fill="url(#gold)" />
-        <ellipse cx="1095" cy="520" rx="12" ry="3" fill="url(#gold)" />
-      </g>
-
-      <g transform="translate(280,470)" filter="url(#goldGlow)">
-        {Array.from({ length: 12 }).map((_, i) => (
-          <ellipse key={i} cx={i * 6 - 30} cy={Math.sin(i) * 4} rx="8" ry="4" fill="none" stroke="#ffd966" strokeWidth="2" opacity="0.9" />
+      {/* scattered coins */}
+      <svg style={{ position: "absolute", left: 0, bottom: 0, width: "100%", height: "28%", zIndex: 2, pointerEvents: "none" }} viewBox="0 0 1440 300" preserveAspectRatio="none">
+        <defs>
+          <radialGradient id="gc" cx=".35" cy=".3">
+            <stop offset="0%" stopColor="#fff5b8" /><stop offset="50%" stopColor="#ffd966" /><stop offset="100%" stopColor="#7a4a08" />
+          </radialGradient>
+        </defs>
+        {[[155,242],[188,254],[130,260],[218,270],[1182,242],[1224,256],[1262,247],[1292,268],[318,278],[1088,282]].map(([cx,cy],i) => (
+          <ellipse key={i} cx={cx} cy={cy} rx={i%3===0?14:12} ry={3.8} fill="url(#gc)" />
         ))}
-        {Array.from({ length: 10 }).map((_, i) => (
-          <ellipse key={`b${i}`} cx={i * 6 - 25 + 3} cy={Math.cos(i) * 3 + 6} rx="8" ry="4" fill="none" stroke="#e6b84d" strokeWidth="2" opacity="0.85" />
-        ))}
-      </g>
+      </svg>
 
-      <g transform="translate(1020,440)">
-        <rect x="-50" y="0" width="100" height="50" fill="#3a2410" stroke="#1a0e05" strokeWidth="2" />
-        <rect x="-50" y="-25" width="100" height="30" fill="#4a2e16" stroke="#1a0e05" strokeWidth="2" rx="2" />
-        <rect x="-50" y="-2" width="100" height="6" fill="#b8862b" />
-        <rect x="-3" y="14" width="6" height="14" fill="#ffd966" filter="url(#goldGlow)" />
-        <rect x="-46" y="-22" width="92" height="22" fill="rgba(255,217,102,0.3)" />
-      </g>
+      {/* sword half-sunk */}
+      <svg style={{ position: "absolute", left: "10%", bottom: "11%", width: "min(105px,10.5vw)", height: "auto", zIndex: 2, filter: "drop-shadow(0 6px 14px rgba(0,0,0,.75))" }} viewBox="0 0 100 280">
+        <defs>
+          <linearGradient id="bl" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#22292f" /><stop offset="50%" stopColor="#8a939c" /><stop offset="100%" stopColor="#22292f" />
+          </linearGradient>
+        </defs>
+        <ellipse cx="50" cy="178" rx="30" ry="5" fill="rgba(32,18,8,.9)" />
+        <path d="M30 176 Q50 167 70 176 L70 182 L30 182Z" fill="rgba(55,35,18,.65)" />
+        <polygon points="44,18 50,8 56,18 56,178 50,180 44,178" fill="url(#bl)" stroke="#0a0a0a" strokeWidth=".4" />
+        <line x1="50" y1="20" x2="50" y2="176" stroke="rgba(255,255,255,.32)" strokeWidth=".6" />
+        <rect x="34" y="14" width="32" height="6" fill="#362616" rx="1" />
+        <rect x="46" y="0" width="8" height="14" fill="#1a0e05" />
+        <line x1="46" y1="5" x2="54" y2="5" stroke="#3a2a15" strokeWidth=".3" />
+        <line x1="46" y1="10" x2="54" y2="10" stroke="#3a2a15" strokeWidth=".3" />
+        <circle cx="50" cy="0" r="3.5" fill="#2a1810" />
+      </svg>
 
-      <g transform="translate(560,400) rotate(-25)">
-        <line x1="0" y1="-60" x2="0" y2="40" stroke="#3a4248" strokeWidth="6" strokeLinecap="round" />
-        <circle cx="0" cy="-65" r="10" fill="none" stroke="#3a4248" strokeWidth="5" />
-        <path d="M-30,40 Q-30,65 0,55 Q30,65 30,40" fill="none" stroke="#3a4248" strokeWidth="6" strokeLinecap="round" />
-        <line x1="-15" y1="-15" x2="15" y2="-15" stroke="#3a4248" strokeWidth="5" />
-      </g>
+      {/* treasure chest photo */}
+      <div style={{
+        position: "absolute", left: "50%", bottom: 0, transform: "translateX(-50%)",
+        width: "min(720px,80vw)", height: "min(480px,56vh)",
+        backgroundImage: "url(https://images.unsplash.com/photo-1632809199725-72a4245e846b?w=1600&q=85&auto=format&fit=crop)",
+        backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center bottom",
+        filter: "brightness(.86) contrast(1.12) saturate(1.06)", zIndex: 3,
+      }} />
 
-      {/* SWORD */}
-      <g transform="translate(450,440) rotate(18)" filter="url(#cyanGlow)">
-        <path d="M-7,0 L-9,-200 L0,-220 L9,-200 L7,0 Z" fill="url(#blade)" stroke="#1a1a1a" strokeWidth="0.5" />
-        <path d="M0,0 L0,-218" stroke="rgba(255,255,255,0.5)" strokeWidth="1" />
-        <rect x="-32" y="-3" width="64" height="9" fill="#5a4a30" stroke="#2a1f10" strokeWidth="1" />
-        <circle cx="-28" cy="1.5" r="3" fill="url(#gold)" />
-        <circle cx="28" cy="1.5" r="3" fill="url(#gold)" />
-        <rect x="-5" y="6" width="10" height="42" fill="#2a1810" />
-        <line x1="-5" y1="14" x2="5" y2="14" stroke="#5a3a20" strokeWidth="1" />
-        <line x1="-5" y1="22" x2="5" y2="22" stroke="#5a3a20" strokeWidth="1" />
-        <line x1="-5" y1="30" x2="5" y2="30" stroke="#5a3a20" strokeWidth="1" />
-        <line x1="-5" y1="38" x2="5" y2="38" stroke="#5a3a20" strokeWidth="1" />
-        <circle cx="0" cy="52" r="9" fill="url(#gold)" stroke="#5a3f0f" strokeWidth="1" />
-        <ellipse cx="0" cy="-100" rx="20" ry="100" fill="rgba(0,229,255,0.15)" />
-      </g>
-
-      {/* HOODED FIGURE */}
-      <g transform="translate(720,420)">
-        <ellipse cx="0" cy="120" rx="120" ry="14" fill="rgba(0,0,0,0.6)" />
-        <path d="M-95,30 L-105,120 L105,120 L95,30 Q70,-10 0,-20 Q-70,-10 -95,30 Z" fill="#0a0d10" stroke="#1a2024" strokeWidth="1" />
-        <path d="M-95,30 Q-50,15 0,15 Q50,15 95,30" fill="none" stroke="#1a2024" strokeWidth="1" />
-        <path d="M-30,30 Q-40,80 -25,115 L25,115 Q40,80 30,30 Z" fill="#040608" />
-        <path d="M-65,-30 Q-80,30 -55,60 L55,60 Q80,30 65,-30 Q60,-50 0,-55 Q-60,-50 -65,-30 Z" fill="#050709" />
-        <path d="M-65,-5 Q-90,30 -75,55 Q-50,55 -45,40 Q-50,15 -50,-10 Z" fill="#040608" />
-        <path d="M65,-5 Q90,30 75,55 Q50,55 45,40 Q50,15 50,-10 Z" fill="#040608" />
-        <path d="M-50,-60 Q-70,-100 0,-110 Q70,-100 50,-60 Q55,-40 45,-30 Q35,-25 0,-25 Q-35,-25 -45,-30 Q-55,-40 -50,-60 Z" fill="#020304" stroke="#0a0d10" strokeWidth="1" />
-        <ellipse cx="0" cy="-55" rx="20" ry="24" fill="#000000" />
-        <ellipse cx="-7" cy="-58" rx="2.5" ry="1.5" fill="#00E5FF" filter="url(#cyanGlow)">
-          <animate attributeName="opacity" values="1;0.3;1" dur="4s" repeatCount="indefinite" />
-        </ellipse>
-        <ellipse cx="7" cy="-58" rx="2.5" ry="1.5" fill="#00E5FF" filter="url(#cyanGlow)">
-          <animate attributeName="opacity" values="1;0.3;1" dur="4s" repeatCount="indefinite" />
-        </ellipse>
-        <g filter="url(#goldGlow)">
-          <path d="M-25,-25 Q0,-15 25,-25 Q15,-5 0,0 Q-15,-5 -25,-25 Z" fill="none" stroke="#ffd966" strokeWidth="1.5" />
-          <circle cx="0" cy="-2" r="3" fill="url(#gold)" />
+      {/* hooded figure sitting on chest lighting blunt */}
+      <svg viewBox="0 0 280 360" preserveAspectRatio="xMidYMax meet" style={{
+        position: "absolute", left: "50%",
+        bottom: "calc(min(480px, 56vh) - 80px)",
+        transform: "translateX(-50%)",
+        width: "min(220px,24vw)", height: "auto", zIndex: 5,
+        filter: "drop-shadow(0 -8px 30px rgba(255,140,40,.22))",
+      }}>
+        <defs>
+          <filter id="fB" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="8" /></filter>
+          <filter id="wH" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6" /></filter>
+          <radialGradient id="fG"><stop offset="0%" stopColor="rgba(255,175,55,.88)" /><stop offset="45%" stopColor="rgba(255,115,28,.38)" /><stop offset="100%" stopColor="transparent" /></radialGradient>
+        </defs>
+        {/* silhouette */}
+        <g fill="#020203">
+          <path d="M140 5C92 5 60 38 58 92c0 20 6 38 17 53 25-10 105-10 130 0 11-15 17-33 17-53C220 38 188 5 140 5z" />
+          <path d="M76 142C56 178 46 220 50 258c3 32 17 56 34 68 21 6 91 6 112 0 17-12 31-36 34-68 4-38-6-80-26-116Q140 162 76 142z" />
+          <path d="M78 158C56 188 50 228 65 252c13 10 30-2 40-22 5-12 13-20 23-25l4-10-16 5C95 205 80 195 78 178V158z" />
+          <path d="M202 158C224 188 230 228 215 252c-13 10-30-2-40-22-5-12-13-20-23-25l-4-10 16 5C185 205 200 195 202 178V158z" />
+          <ellipse cx="92" cy="285" rx="30" ry="48" />
+          <ellipse cx="188" cy="285" rx="30" ry="48" />
+          <ellipse cx="80" cy="335" rx="22" ry="10" />
+          <ellipse cx="200" cy="335" rx="22" ry="10" />
         </g>
-        <g opacity="0.8">
-          {[0, 1, 2, 3, 4].map((i) => (
-            <circle key={i} cx={-30 + i * 15} cy={62 + (i % 2) * 5} r="2" fill="#00E5FF" filter="url(#cyanGlow)">
-              <animate attributeName="cy" values={`${62 + (i % 2) * 5};${75 + (i % 2) * 5}`} dur={`${1.2 + i * 0.2}s`} repeatCount="indefinite" />
-              <animate attributeName="opacity" values="0.9;0" dur={`${1.2 + i * 0.2}s`} repeatCount="indefinite" />
-            </circle>
-          ))}
-        </g>
-      </g>
-
-      <g transform="translate(820,500)" opacity="0.85">
-        <ellipse cx="0" cy="0" rx="14" ry="12" fill="#dadcdf" />
-        <ellipse cx="-5" cy="-1" rx="3" ry="4" fill="#0a0a0a" />
-        <ellipse cx="5" cy="-1" rx="3" ry="4" fill="#0a0a0a" />
-        <path d="M-3,7 L-4,11 M0,7 L0,11 M3,7 L4,11" stroke="#0a0a0a" strokeWidth="1" />
-        <path d="M-9,8 Q0,14 9,8" stroke="#0a0a0a" strokeWidth="0.5" fill="none" />
-      </g>
-
-      <circle cx="200" cy="510" r="4" fill="#f5e8d0" opacity="0.7" />
-      <circle cx="220" cy="525" r="3" fill="#f5e8d0" opacity="0.6" />
-      <circle cx="850" cy="525" r="4" fill="#f5e8d0" opacity="0.7" />
-      <path d="M650,500 Q655,490 660,500 L660,510 L650,510 Z" fill="#d8b88a" />
-
-      {Array.from({ length: 6 }).map((_, i) => (
-        <circle key={`bb${i}`} cx={680 + i * 14} cy="380" r={1 + (i % 2)} fill="rgba(255,255,255,0.7)">
-          <animate attributeName="cy" values="380;100" dur={`${4 + i}s`} repeatCount="indefinite" />
-          <animate attributeName="opacity" values="0.7;0" dur={`${4 + i}s`} repeatCount="indefinite" />
+        {/* warm glow on hood from flame */}
+        <ellipse cx="140" cy="136" rx="44" ry="30" fill="rgba(255,138,48,.38)" filter="url(#wH)" />
+        <ellipse cx="140" cy="150" rx="33" ry="18" fill="rgba(255,98,28,.48)" filter="url(#wH)" />
+        {/* cyan eyes */}
+        <circle cx="125" cy="98" r="1.8" fill="#00E5FF">
+          <animate attributeName="opacity" values="1;0.3;1" dur="4s" repeatCount="indefinite" />
         </circle>
-      ))}
-    </svg>
+        <circle cx="155" cy="98" r="1.8" fill="#00E5FF">
+          <animate attributeName="opacity" values="1;0.3;1" dur="4s" repeatCount="indefinite" />
+        </circle>
+        {/* blunt */}
+        <g transform="rotate(-22 140 142)">
+          <rect x="138" y="133" width="3.5" height="18" rx="1.2" fill="#2a1c10" />
+          <rect x="138" y="133" width="3.5" height="4" rx="1" fill="#e85515" />
+          <circle cx="139.8" cy="132" r="1.8" fill="#ffaa30" opacity=".9">
+            <animate attributeName="opacity" values=".9;.45;.9" dur="1.5s" repeatCount="indefinite" />
+          </circle>
+        </g>
+        {/* lighter */}
+        <g transform="translate(155,190)">
+          <rect x="-5" y="0" width="10" height="16" rx="2" fill="#0e0e0e" stroke="#2a2a2a" strokeWidth=".5" />
+          <rect x="-3" y="-3" width="6" height="3" fill="#383838" />
+          <line x1="-3" y1="7" x2="3" y2="7" stroke="#1a1a1a" strokeWidth=".4" />
+        </g>
+        {/* flame */}
+        <g transform="translate(155,179)">
+          <circle cx="0" cy="0" r="30" fill="url(#fG)" filter="url(#fB)" />
+          <path fill="#ff8a0e">
+            <animate dur=".45s" repeatCount="indefinite" attributeName="d"
+              values="M0-15C-6-8-8-2-6 5-3 9 0 10 0 10 0 10 3 9 6 5 8-2 6-8 0-15Z;M0-17C-5-9-7-3-5 5-2 9 0 10 0 10 0 10 4 9 5 5 7-3 5-9 0-17Z;M0-15C-6-8-8-2-6 5-3 9 0 10 0 10 0 10 3 9 6 5 8-2 6-8 0-15Z" />
+          </path>
+          <path d="M0-10C-3-5-4-1-2 4 0 7 0 7 2 4 4-1 3-5 0-10Z" fill="#ffd633" />
+          <path d="M0-6C-1.5-3-2 0-1 2 0 4 1 2 2 0 1.5-3 0-6Z" fill="#fff" />
+          <circle cx="0" cy="-20" r="1.5" fill="#fffab0" opacity=".7">
+            <animate attributeName="cy" values="-20;-24;-20" dur=".6s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values=".7;.1;.7" dur=".6s" repeatCount="indefinite" />
+          </circle>
+        </g>
+      </svg>
+
+      {/* edge vignette */}
+      <div style={{ position: "absolute", inset: 0, boxShadow: "inset 0 0 240px 90px #000", pointerEvents: "none", zIndex: 8 }} />
+    </div>
   );
 }
 
-function WaterSurface() {
-  return (
-    <svg viewBox="0 0 1440 140" preserveAspectRatio="none" style={{
-      position: "absolute", bottom: -1, left: 0, width: "100%", height: 140, zIndex: 5,
-    }}>
-      <defs>
-        <linearGradient id="wsg" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="rgba(255,255,255,0.15)" />
-          <stop offset="40%" stopColor="rgba(8,30,50,0.7)" />
-          <stop offset="100%" stopColor="#04101c" />
-        </linearGradient>
-      </defs>
-      <path fill="url(#wsg)" opacity="0.8">
-        <animate attributeName="d" dur="7s" repeatCount="indefinite"
-          values="M0,40 Q360,90 720,50 T1440,55 L1440,140 L0,140 Z;
-                  M0,55 Q360,30 720,70 T1440,40 L1440,140 L0,140 Z;
-                  M0,40 Q360,90 720,50 T1440,55 L1440,140 L0,140 Z" />
-      </path>
-      <path fill="#03101c">
-        <animate attributeName="d" dur="5s" repeatCount="indefinite"
-          values="M0,75 Q360,55 720,80 T1440,70 L1440,140 L0,140 Z;
-                  M0,70 Q360,90 720,60 T1440,85 L1440,140 L0,140 Z;
-                  M0,75 Q360,55 720,80 T1440,70 L1440,140 L0,140 Z" />
-      </path>
-    </svg>
-  );
-}
-
-const PRODUCTS = [
-  { id: "001", name: "TIDAL", tag: "OVERSIZED HOODIE", price: "$180", stock: "IN STOCK" },
-  { id: "002", name: "ABYSS", tag: "GRAPHIC TEE", price: "$75", stock: "IN STOCK" },
-  { id: "003", name: "DEPTH", tag: "CARGO PANTS", price: "$220", stock: "LOW STOCK" },
-  { id: "004", name: "PRESSURE", tag: "WORK JACKET", price: "$340", stock: "SOLD OUT" },
-];
-
+// ── main ─────────────────────────────────────────────────────────────
 export default function App() {
   const [scrollY, setScrollY] = useState(0);
-  const [winH, setWinH] = useState(typeof window !== "undefined" ? window.innerHeight : 800);
-  const [docH, setDocH] = useState(8000);
-  const [mouse, setMouse] = useState({ x: 0.5, y: 0.5 });
-  const [, setTick] = useState(0);
+  const [winH, setWinH] = useState(800);
+  const [docH, setDocH] = useState(4000);
 
   useEffect(() => {
     const onScroll = () => setScrollY(window.scrollY);
     const onResize = () => { setWinH(window.innerHeight); setDocH(document.documentElement.scrollHeight); };
-    const onMouse = (e) => setMouse({ x: e.clientX / window.innerWidth, y: e.clientY / window.innerHeight });
     onResize();
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onResize);
-    window.addEventListener("mousemove", onMouse);
-    const id = setInterval(() => setTick((t) => t + 1), 60000);
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("mousemove", onMouse);
-      clearInterval(id);
-    };
+    return () => { window.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onResize); };
   }, []);
 
-  const depth = docH > winH ? Math.min(1, Math.max(0, scrollY / (docH - winH))) : 0;
-  const [r, g, b] = depthRGB(depth);
-  const navScrolled = scrollY > 80;
+  const depth = cl(scrollY / Math.max(1, docH - winH));
+  const [r, g, b] = bgRGB(depth);
+  const fore = foreRGB(depth);
+  const drip = dripColor(depth);
 
-  const [dropRef, dropSeen] = useReveal(0.1);
-  const [manRef, manSeen] = useReveal(0.2);
-  const [featRef, featSeen] = useReveal(0.15);
-  const [floorRef, floorSeen] = useReveal(0.05);
+  // drip section: 300vh container, sticky 100vh panel
+  // progress 0→1 over first 2 * winH of scroll
+  const dp = cl(scrollY / (winH * 2));
+  const dripExtend = cl(dp / 0.44);          // drips grow: 0→0.44
+  const manifestoIn = cl((dp - 0.46) / 0.32); // manifesto: 0.46→0.78
+  const sectionOut  = cl((dp - 0.87) / 0.13); // fade out: 0.87→1.0
 
-  const dropDate = new Date("2026-06-15T00:00:00");
-  const diff = Math.max(0, dropDate - new Date());
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-  const mins = Math.floor((diff / (1000 * 60)) % 60);
+  const maxDripH = winH * 0.21;
+  const dripH = dripExtend * maxDripH;
+
+  // per-letter stagger offsets (em fractions of maxDripH)
+  const stagger = [0, 0.06, -0.04, 0.09, -0.06, 0.04, -0.09, 0.02];
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap');
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-        @keyframes floatSway { 0% { transform: translateY(0) rotate(-0.5deg); } 100% { transform: translateY(-10px) rotate(0.5deg); } }
-        @keyframes swimAcross { from { transform: translateX(-100px); } to { transform: translateX(calc(100vw + 100px)); } }
-        @keyframes bobble { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
-        @keyframes rippleOut { from { width: 10px; height: 10px; opacity: 1; } to { width: 120px; height: 120px; opacity: 0; } }
-        @keyframes causticShift { from { transform: translateX(-3%) scale(1); } to { transform: translateX(3%) scale(1.05); } }
-        @keyframes dripFall { 0% { transform: translateY(-4px); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(20px); opacity: 0; } }
-        @keyframes glow { 0%, 100% { text-shadow: 0 0 20px rgba(0,229,255,0.5), 0 0 40px rgba(0,229,255,0.3); } 50% { text-shadow: 0 0 30px rgba(0,229,255,0.8), 0 0 60px rgba(0,229,255,0.5); } }
-        @keyframes scrollHint { 0% { transform: translateY(0); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(20px); opacity: 0; } }
-
-        .nav-link { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.25em; color: rgba(255,255,255,0.6); text-decoration: none; position: relative; transition: color 0.2s; }
-        .nav-link:hover { color: #00E5FF; }
-        .nav-link::after { content: ''; position: absolute; bottom: -4px; left: 0; width: 0; height: 1px; background: #00E5FF; transition: width 0.3s; }
-        .nav-link:hover::after { width: 100%; }
-
-        .btn-cyan { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.25em; padding: 14px 32px; background: #00E5FF; color: #000; border: none; cursor: pointer; transition: all 0.2s; font-weight: 700; }
-        .btn-cyan:hover { background: white; transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,229,255,0.5); }
-        .btn-ghost-cyan { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.25em; padding: 14px 32px; background: transparent; color: #00E5FF; border: 1px solid #00E5FF; cursor: pointer; transition: all 0.2s; }
-        .btn-ghost-cyan:hover { background: rgba(0,229,255,0.1); transform: translateY(-2px); }
-
-        .ticker-track { animation: ticker 30s linear infinite; white-space: nowrap; display: inline-flex; }
-
-        @media (max-width: 768px) {
-          .desktop-only { display: none !important; }
-          .products-grid { grid-template-columns: 1fr 1fr !important; }
-          .footer-grid { grid-template-columns: 1fr 1fr !important; gap: 32px !important; }
-          .featured-grid { grid-template-columns: 1fr !important; gap: 40px !important; }
-          .hero-title { font-size: clamp(80px, 26vw, 140px) !important; }
-        }
+        @import url('https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;}
+        html,body{background:#fff;overflow-x:hidden;}
+        body{font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased;cursor:none;}
+        @media(max-width:768px){body{cursor:auto;}}
+        @keyframes rippleOut{from{width:10px;height:10px;opacity:1}to{width:120px;height:120px;opacity:0}}
+        @keyframes scrollPulse{0%{transform:translateY(0);opacity:0}30%{opacity:1}100%{transform:translateY(18px);opacity:0}}
+        @keyframes wDrop{0%{transform:translateY(0);opacity:.75}100%{transform:translateY(55px);opacity:0}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
       `}</style>
 
-      <div style={{
-        position: "fixed", inset: 0, zIndex: -1,
-        background: `linear-gradient(180deg, rgb(${r},${g},${b}) 0%, rgb(${Math.max(0, r - 20)},${Math.max(0, g - 20)},${Math.max(0, b - 20)}) 100%)`,
-      }} />
-
-      <Caustics depth={depth} />
-      <BubbleField />
-      <DepthMeter depth={depth} />
-      <CustomCursor />
+      {/* fixed bg */}
+      <div style={{ position: "fixed", inset: 0, zIndex: -1, background: `rgb(${r},${g},${b})` }} />
       <FilmGrain />
+      <BubbleField depth={depth} />
+      <CustomCursor />
+      <DepthMeter depth={depth} />
 
+      {/* NAV */}
       <nav style={{
         position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
-        padding: navScrolled ? "12px 32px" : "20px 32px",
-        background: navScrolled ? "rgba(0,0,0,0.5)" : "transparent",
-        backdropFilter: navScrolled ? "blur(14px)" : "none",
-        borderBottom: navScrolled ? "1px solid rgba(255,255,255,0.06)" : "1px solid transparent",
-        transition: "all 0.4s",
+        padding: scrollY > 40 ? "12px 32px" : "20px 32px",
+        transition: "padding .4s",
+        background: depth > 0.18 && scrollY > 40 ? "rgba(0,0,0,.45)" : "transparent",
+        backdropFilter: depth > 0.18 && scrollY > 40 ? "blur(14px)" : "none",
         display: "flex", justifyContent: "space-between", alignItems: "center",
       }}>
-        <div style={{
-          fontFamily: "'Anton', sans-serif", fontSize: 26, color: "white", letterSpacing: "0.05em",
-          textShadow: "0 0 20px rgba(0,229,255,0.5)",
-        }}>
+        <div style={{ fontFamily: "Anton,sans-serif", fontSize: 22, letterSpacing: ".05em", color: fore }}>
           DRENCHED<span style={{ color: "#00E5FF" }}>.</span>
         </div>
-        <div className="desktop-only" style={{ display: "flex", gap: 36 }}>
-          {["DROP 001", "MANIFESTO", "STORY", "CONTACT"].map((n) => (
-            <a key={n} href={`#${n.replace(" ", "-").toLowerCase()}`} className="nav-link">{n}</a>
-          ))}
-        </div>
-        <button className="btn-cyan" style={{ padding: "10px 20px", fontSize: 9 }}>SHOP ↗</button>
+        <button style={{
+          fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: ".25em",
+          padding: "9px 20px", background: "transparent", cursor: "pointer",
+          border: `1px solid ${depth < 0.15 ? "rgba(0,0,0,.3)" : "rgba(255,255,255,.38)"}`,
+          color: fore, transition: "all .3s",
+        }}>SHOP ↗</button>
       </nav>
 
-      {/* HERO */}
-      <section style={{ height: "100vh", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-        {/* subtle moonlit glow from above (no more sunny sky) */}
+      {/* ── DRIP SECTION (300vh scroll room) ── */}
+      <section style={{ height: "300vh", position: "relative" }}>
         <div style={{
-          position: "absolute", width: "100%", height: "60%", top: 0, left: 0,
-          background: "radial-gradient(ellipse 1200px 400px at 50% -100px, rgba(120,200,230,0.15), transparent 70%)",
-          pointerEvents: "none",
-        }} />
-
-        <div style={{
-          position: "absolute", top: 100, left: "50%", transform: "translateX(-50%)",
-          fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.5em",
-          color: "rgba(255,255,255,0.7)", animation: "fadeUp 0.8s 0.1s both",
+          position: "sticky", top: 0, height: "100vh", overflow: "hidden",
+          display: "flex", flexDirection: "column", alignItems: "center",
+          paddingTop: "24vh",
+          opacity: 1 - sectionOut,
         }}>
-          EST. 2026 — TEL AVIV × NYC
-        </div>
 
-        <div style={{ textAlign: "center", zIndex: 5, padding: "0 24px" }}>
-          <h1 className="hero-title" style={{
-            fontFamily: "'Anton', sans-serif", fontSize: "clamp(110px, 22vw, 280px)",
-            color: "white", letterSpacing: "-0.01em", lineHeight: 0.85,
-            textShadow: "0 4px 30px rgba(0,0,0,0.3)",
-            animation: "fadeUp 1s 0.2s both", position: "relative",
-          }}>
-            DRENCHED
-            <span style={{ position: "absolute", left: 0, right: 0, bottom: -10, display: "flex", justifyContent: "space-around", pointerEvents: "none" }}>
-              {[0, 1, 2, 3, 4].map((i) => (
-                <span key={i} style={{
-                  width: 6, height: 6, borderRadius: "50% 50% 50% 50% / 60% 60% 40% 40%",
-                  background: "rgba(255,255,255,0.7)",
-                  animation: `dripFall ${2 + i * 0.3}s ease-in ${i * 0.4}s infinite`,
-                }} />
-              ))}
-            </span>
-          </h1>
+          {/* DRENCHED with per-letter drips */}
           <div style={{
-            fontFamily: "'Inter', sans-serif", fontWeight: 300, fontSize: "clamp(16px, 3vw, 24px)",
-            color: "rgba(255,255,255,0.85)", letterSpacing: "0.4em", marginTop: 24,
-            animation: "fadeUp 1s 0.5s both",
+            fontFamily: "Anton,sans-serif",
+            fontSize: "clamp(72px,15vw,175px)",
+            lineHeight: 1, letterSpacing: ".025em",
+            color: fore, userSelect: "none", position: "relative",
           }}>
-            DRENCHED <span style={{ fontStyle: "italic", color: "#00E5FF" }}>in</span> DRIP
+            {"DRENCHED".split("").map((ch, i) => {
+              const thisH = Math.max(0, dripH + stagger[i] * maxDripH);
+              return (
+                <span key={i} style={{ position: "relative", display: "inline-block" }}>
+                  {ch}
+                  {/* drip stem */}
+                  {dripExtend > 0.01 && (
+                    <span style={{
+                      position: "absolute", left: "50%", top: "94%",
+                      transform: "translateX(-50%)",
+                      width: 5, height: thisH,
+                      background: drip,
+                      borderRadius: "0 0 3px 3px",
+                      display: "block", pointerEvents: "none",
+                    }} />
+                  )}
+                  {/* drip blob */}
+                  {thisH > 8 && (
+                    <span style={{
+                      position: "absolute", left: "50%",
+                      top: `calc(94% + ${thisH}px)`,
+                      transform: "translateX(-50%) translateY(-2px)",
+                      width: 13, height: 16,
+                      background: drip,
+                      borderRadius: "42% 42% 58% 58% / 28% 28% 72% 72%",
+                      display: "block", pointerEvents: "none",
+                    }} />
+                  )}
+                </span>
+              );
+            })}
           </div>
-          <div style={{ display: "flex", gap: 14, justifyContent: "center", marginTop: 50, animation: "fadeUp 1s 0.8s both", flexWrap: "wrap" }}>
-            <button className="btn-cyan">DIVE IN ↓</button>
-            <button className="btn-ghost-cyan" style={{ color: "white", borderColor: "white" }}>WATCH FILM</button>
-          </div>
-        </div>
 
-        <div style={{
-          position: "absolute", bottom: 200, left: "50%", transform: "translateX(-50%)",
-          fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.3em",
-          color: "rgba(255,255,255,0.6)", textAlign: "center",
-        }}>
-          <div style={{ marginBottom: 12 }}>SCROLL TO DESCEND</div>
-          <div style={{ width: 1, height: 50, background: "rgba(255,255,255,0.4)", margin: "0 auto", position: "relative", overflow: "hidden" }}>
-            <div style={{ position: "absolute", width: 1, height: 20, background: "white", animation: "scrollHint 2s ease-in-out infinite" }} />
-          </div>
-        </div>
-
-        <WaterSurface />
-      </section>
-
-      {/* TICKER */}
-      <div style={{ background: "#00E5FF", padding: "12px 0", overflow: "hidden", position: "relative", zIndex: 6 }}>
-        <div className="ticker-track">
-          {Array(10).fill(["DRENCHED", "IN DRIP", "DROP 001 — TIDE", "GET WET", "SUBMERGED.", "TEL AVIV", "× NYC", "EST. 2026"]).flat().map((t, i) => (
-            <span key={i} style={{ fontFamily: "'Anton', sans-serif", fontSize: 16, letterSpacing: "0.3em", color: "#000", padding: "0 26px" }}>
-              {t} <span style={{ opacity: 0.5 }}>◆</span>
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* PLUNGE */}
-      <section style={{ minHeight: "100vh", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", padding: "100px 24px", overflow: "hidden" }}>
-        <div style={{ textAlign: "center", maxWidth: 900, zIndex: 5, position: "relative" }}>
-          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.4em", color: "rgba(255,255,255,0.6)", marginBottom: 28 }}>
-            — 0050 m / DEPTH ZONE 01 —
-          </div>
-          <h2 style={{ fontFamily: "'Anton', sans-serif", fontSize: "clamp(60px, 13vw, 180px)", color: "white", lineHeight: 0.85, letterSpacing: "-0.01em" }}>
-            PLUNGE.
-          </h2>
-          <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 300, fontSize: "clamp(14px, 2vw, 18px)", color: "rgba(255,255,255,0.75)", maxWidth: 600, margin: "30px auto 0", lineHeight: 1.7 }}>
-            Most brands let you sample the drip. We push you in head first. The deeper you go, the wetter you get.
-          </p>
-        </div>
-      </section>
-
-      {/* DROP 001 */}
-      <section ref={dropRef} id="drop-001" style={{ minHeight: "120vh", padding: "140px 32px", position: "relative", zIndex: 6 }}>
-        <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+          {/* manifesto text — floats up into view below the drips */}
           <div style={{
-            display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 64,
-            opacity: dropSeen ? 1 : 0, transform: dropSeen ? "translateY(0)" : "translateY(30px)",
-            transition: "opacity 0.8s, transform 0.8s", flexWrap: "wrap", gap: 24,
-          }}>
-            <div>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.4em", color: "#00E5FF", marginBottom: 14 }}>
-                DROP 001 / TIDE — 0150 m
-              </div>
-              <h2 style={{ fontFamily: "'Anton', sans-serif", fontSize: "clamp(54px, 9vw, 110px)", color: "white", lineHeight: 0.88, letterSpacing: "-0.005em" }}>
-                FIRST<br />WAVE
-              </h2>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.3em", color: "rgba(255,255,255,0.5)", marginBottom: 8 }}>
-                NEXT DROP IN
-              </div>
-              <div style={{ fontFamily: "'Anton', sans-serif", fontSize: 38, color: "white", letterSpacing: "0.08em" }}>
-                {String(days).padStart(2, "0")}<span style={{ color: "#00E5FF" }}>:</span>{String(hours).padStart(2, "0")}<span style={{ color: "#00E5FF" }}>:</span>{String(mins).padStart(2, "0")}
-              </div>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, letterSpacing: "0.3em", color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
-                D : H : M
-              </div>
-            </div>
-          </div>
-
-          <div className="products-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
-            {PRODUCTS.map((p, i) => <ProductCard key={p.id} p={p} idx={i} seen={dropSeen} />)}
-          </div>
-
-          <div style={{ marginTop: 56, textAlign: "center", opacity: dropSeen ? 1 : 0, transition: "opacity 1s 0.8s" }}>
-            <button className="btn-ghost-cyan" style={{ color: "white", borderColor: "rgba(255,255,255,0.5)" }}>VIEW ALL — 12 PIECES →</button>
-          </div>
-        </div>
-      </section>
-
-      {/* MANIFESTO */}
-      <section ref={manRef} id="manifesto" style={{
-        minHeight: "100vh", padding: "140px 32px", position: "relative", zIndex: 6,
-        display: "flex", alignItems: "center",
-      }}>
-        <div style={{
-          position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
-          fontFamily: "'Anton', sans-serif", fontSize: "clamp(180px, 32vw, 400px)",
-          color: "rgba(255,255,255,0.025)", whiteSpace: "nowrap", pointerEvents: "none",
-          letterSpacing: "-0.04em",
-        }}>
-          DRENCHED
-        </div>
-
-        <div style={{ maxWidth: 900, margin: "0 auto", position: "relative", zIndex: 2, width: "100%" }}>
-          <div style={{
-            fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.4em", color: "#00E5FF", marginBottom: 56,
-            opacity: manSeen ? 1 : 0, transform: manSeen ? "translateY(0)" : "translateY(20px)", transition: "opacity 0.6s, transform 0.6s",
-          }}>
-            THE MANIFESTO — 0500 m
-          </div>
-
-          {[
-            "They dripped.",
-            "We DRENCHED.",
-            "There's a difference between wearing fits",
-            "and being fully submerged in them.",
-            "Welcome to the deep end.",
-          ].map((line, i) => (
-            <div key={i} style={{
-              fontFamily: "'Anton', sans-serif",
-              fontSize: i === 1 ? "clamp(60px, 11vw, 130px)" : "clamp(32px, 6vw, 64px)",
-              color: i === 1 ? "#00E5FF" : "white",
-              lineHeight: 1.05, letterSpacing: "-0.005em", marginBottom: 18,
-              opacity: manSeen ? 1 : 0, transform: manSeen ? "translateY(0)" : "translateY(40px)",
-              transition: `opacity 0.9s ${0.15 + i * 0.18}s, transform 0.9s ${0.15 + i * 0.18}s`,
-              animation: i === 1 && manSeen ? "glow 3s ease-in-out infinite" : "none",
-              textShadow: i === 1 ? "0 0 30px rgba(0,229,255,0.5)" : "none",
-            }}>
-              {line}
-            </div>
-          ))}
-
-          <div style={{
-            marginTop: 56, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: "0.2em",
-            color: "rgba(255,255,255,0.4)", opacity: manSeen ? 1 : 0, transition: "opacity 1s 1.5s",
-          }}>
-            — D × D / 2026
-          </div>
-        </div>
-      </section>
-
-      {/* FEATURED */}
-      <section ref={featRef} style={{
-        minHeight: "90vh", padding: "140px 32px", position: "relative", zIndex: 6,
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}>
-        <div className="featured-grid" style={{
-          maxWidth: 1100, width: "100%", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 60, alignItems: "center",
-        }}>
-          <div style={{
-            opacity: featSeen ? 1 : 0, transform: featSeen ? "translateX(0)" : "translateX(-40px)",
-            transition: "opacity 0.9s, transform 0.9s",
-          }}>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.4em", color: "#00E5FF", marginBottom: 18 }}>
-              FEATURED — 0900 m
-            </div>
-            <h3 style={{ fontFamily: "'Anton', sans-serif", fontSize: "clamp(48px, 7vw, 90px)", color: "white", lineHeight: 0.9, marginBottom: 24, letterSpacing: "-0.005em" }}>
-              THE<br />ABYSS<br />HOODIE
-            </h3>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: "rgba(255,255,255,0.65)", lineHeight: 1.9, marginBottom: 40, fontWeight: 300 }}>
-              500 GSM heavyweight French terry. Tonal embroidery. Reflective tape that lights up like bioluminescence under flash. Limited to 200 numbered pieces — once they're gone, they're at the bottom.
-            </p>
-            <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-              <button className="btn-cyan">$420 — COP IT</button>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.2em", color: "#ff5566" }}>
-                ⬤ 47 / 200 LEFT
-              </div>
-            </div>
-          </div>
-
-          <div style={{
-            opacity: featSeen ? 1 : 0, transform: featSeen ? "translateX(0)" : "translateX(40px)",
-            transition: "opacity 0.9s 0.2s, transform 0.9s 0.2s", position: "relative",
+            marginTop: `${dripH + 32}px`,
+            textAlign: "center",
+            padding: "0 28px",
+            maxWidth: 680,
+            opacity: manifestoIn,
+            transform: `translateY(${(1 - manifestoIn) * 18}px)`,
+            pointerEvents: "none",
           }}>
             <div style={{
-              aspectRatio: "3/4",
-              background: "linear-gradient(135deg, rgba(0,30,40,0.6), rgba(0,10,20,0.9))",
-              border: "1px solid rgba(0,229,255,0.2)",
-              position: "relative", overflow: "hidden",
-              animation: "bobble 4s ease-in-out infinite",
+              fontFamily: "Anton,sans-serif",
+              fontSize: "clamp(26px,4.5vw,54px)",
+              color: fore, lineHeight: 1.05,
+              letterSpacing: "-.005em", marginBottom: 16,
             }}>
-              <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 50% 0%, rgba(0,229,255,0.18), transparent 60%)" }} />
-              <div style={{
-                position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                fontFamily: "'Anton', sans-serif", fontSize: "clamp(70px, 13vw, 150px)",
-                color: "rgba(0,229,255,0.18)", lineHeight: 0.85, textAlign: "center",
-                animation: "glow 4s ease-in-out infinite",
-              }}>
-                ABYSS
-              </div>
-              <div style={{ position: "absolute", top: 18, left: 18, fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.3em", color: "#00E5FF" }}>
-                #001 / 200
-              </div>
-              <div style={{ position: "absolute", bottom: 18, right: 18, fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.3em", color: "rgba(255,255,255,0.5)" }}>
-                LIMITED
-              </div>
+              They dripped.<br />
+              <span style={{ color: "#00E5FF" }}>We DRENCHED.</span>
+            </div>
+            <div style={{
+              fontFamily: "Inter,sans-serif", fontWeight: 300,
+              fontSize: "clamp(13px,1.7vw,17px)",
+              color: fore, lineHeight: 1.85, opacity: .82,
+            }}>
+              There's a difference between wearing fits<br />
+              and being fully submerged in them.<br />
+              Welcome to the deep end.
+            </div>
+          </div>
+
+          {/* scroll hint — only visible at very top */}
+          <div style={{
+            position: "absolute", bottom: 34,
+            fontFamily: "'JetBrains Mono',monospace",
+            fontSize: 9, letterSpacing: ".35em",
+            color: fore, opacity: cl(1 - dp * 18),
+            textAlign: "center", transition: "opacity .4s",
+          }}>
+            <div style={{ marginBottom: 9 }}>SCROLL TO DESCEND</div>
+            <div style={{ width: 1, height: 36, background: fore, margin: "0 auto", position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", width: 1, height: 14, background: fore, animation: "scrollPulse 2s ease-in-out infinite" }} />
             </div>
           </div>
         </div>
       </section>
 
-      {/* OCEAN FLOOR */}
-      <section ref={floorRef} style={{ minHeight: "120vh", padding: "120px 0 0", position: "relative", zIndex: 6 }}>
-        <div style={{ textAlign: "center", marginBottom: 60, padding: "0 24px" }}>
+      {/* ── SWEATS WATER ── */}
+      <section style={{
+        minHeight: "55vh", display: "flex", alignItems: "center",
+        justifyContent: "center", position: "relative", overflow: "hidden",
+        padding: "80px 24px",
+      }}>
+        {/* subtle caustic hint */}
+        <div style={{
+          position: "absolute", inset: 0,
+          background: "radial-gradient(ellipse 900px 300px at 50% 100%, rgba(0,229,255,.05), transparent 70%)",
+          pointerEvents: "none",
+        }} />
+        <div style={{ textAlign: "center", position: "relative", zIndex: 2 }}>
           <div style={{
-            fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.4em", color: "#00E5FF", marginBottom: 24,
-            opacity: floorSeen ? 1 : 0, transition: "opacity 0.8s",
+            fontFamily: "'JetBrains Mono',monospace", fontSize: 9,
+            letterSpacing: ".45em", color: "rgba(255,255,255,.45)", marginBottom: 20,
           }}>
+            D × D — EST. 2026 — TLV × NYC
+          </div>
+          {/* big type */}
+          <div style={{
+            fontFamily: "Anton,sans-serif",
+            fontSize: "clamp(54px,11vw,140px)",
+            color: "white", lineHeight: .88,
+            letterSpacing: "-.01em", position: "relative",
+          }}>
+            SWEATS<br />WATER
+            {/* drops dripping from the word */}
+            <div style={{
+              position: "absolute", left: "5%", right: "5%", bottom: -18,
+              display: "flex", justifyContent: "space-evenly",
+              pointerEvents: "none",
+            }}>
+              {Array.from({ length: 11 }).map((_, i) => (
+                <span key={i} style={{
+                  width: 4, height: 9,
+                  borderRadius: "40% 40% 60% 60% / 25% 25% 75% 75%",
+                  background: `rgba(${100 + i * 8},${190 + i * 4},235,.72)`,
+                  display: "block",
+                  animation: `wDrop ${1.1 + i * 0.12}s ease-in ${i * 0.15}s infinite`,
+                }} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── OCEAN FLOOR ── */}
+      <section style={{ position: "relative" }}>
+        <div style={{ textAlign: "center", padding: "80px 24px 40px", position: "relative", zIndex: 2 }}>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, letterSpacing: ".45em", color: "#00E5FF", marginBottom: 18 }}>
             — 1500 m / THE FLOOR —
           </div>
-          <h2 style={{
-            fontFamily: "'Anton', sans-serif", fontSize: "clamp(50px, 10vw, 130px)", color: "white", lineHeight: 0.85, letterSpacing: "-0.01em",
-            opacity: floorSeen ? 1 : 0, transform: floorSeen ? "translateY(0)" : "translateY(40px)",
-            transition: "opacity 0.9s 0.1s, transform 0.9s 0.1s",
-          }}>
+          <div style={{ fontFamily: "Anton,sans-serif", fontSize: "clamp(46px,9vw,115px)", color: "white", lineHeight: .88, letterSpacing: "-.01em" }}>
             WE LIVE<br />DOWN<span style={{ color: "#00E5FF" }}>HERE.</span>
-          </h2>
-          <p style={{
-            fontFamily: "'Inter', sans-serif", fontWeight: 300, fontSize: 16, color: "rgba(255,255,255,0.6)",
-            maxWidth: 540, margin: "30px auto 0", lineHeight: 1.7,
-            opacity: floorSeen ? 1 : 0, transition: "opacity 0.9s 0.4s",
-          }}>
-            Where it's cold. Where it's quiet. Where the only thing that glows is what we made.
-          </p>
+          </div>
         </div>
-
-        <div style={{ position: "relative", marginTop: 40 }}>
-          <OceanFloor />
-        </div>
+        <OceanFloor />
       </section>
 
-      {/* FOOTER */}
-      <footer id="contact" style={{
-        background: "#000308", padding: "100px 32px 40px",
-        borderTop: "1px solid rgba(0,229,255,0.15)", position: "relative", zIndex: 7,
-      }}>
-        <div style={{ maxWidth: 1280, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 80 }}>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.4em", color: "#00E5FF", marginBottom: 18 }}>
-              GET ON THE LIST
-            </div>
-            <h3 style={{ fontFamily: "'Anton', sans-serif", fontSize: "clamp(40px, 7vw, 80px)", color: "white", lineHeight: 0.9, marginBottom: 30 }}>
-              FIRST WAVE.<br />FIRST DIPS.
-            </h3>
-            <div style={{ display: "flex", gap: 8, maxWidth: 480, margin: "0 auto", flexWrap: "wrap", justifyContent: "center" }}>
-              <input type="email" placeholder="your@email.com"
-                style={{
-                  flex: 1, minWidth: 240, padding: "14px 18px", background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.15)", color: "white",
-                  fontFamily: "'JetBrains Mono', monospace", fontSize: 13, outline: "none",
-                }} />
-              <button className="btn-cyan">SUBMERGE ↓</button>
-            </div>
+      {/* ── FOOTER ── */}
+      <footer style={{ background: "#000", padding: "60px 32px 32px", borderTop: "1px solid rgba(0,229,255,.12)" }}>
+        <div style={{ maxWidth: 700, margin: "0 auto", textAlign: "center" }}>
+          <div style={{ fontFamily: "Anton,sans-serif", fontSize: "clamp(38px,6vw,72px)", color: "white", marginBottom: 28, letterSpacing: ".03em" }}>
+            DRENCHED<span style={{ color: "#00E5FF" }}>.</span>
           </div>
-
-          <div className="footer-grid" style={{
-            display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 56, marginBottom: 56,
-          }}>
-            <div>
-              <div style={{ fontFamily: "'Anton', sans-serif", fontSize: 50, color: "white", marginBottom: 16, letterSpacing: "0.03em" }}>
-                DRENCHED<span style={{ color: "#00E5FF" }}>.</span>
-              </div>
-              <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 300, fontSize: 13, color: "rgba(255,255,255,0.45)", lineHeight: 1.8, maxWidth: 280 }}>
-                Streetwear soaked in Mediterranean salt and New York concrete. Made for those who don't sip drip — they swim in it.
-              </p>
-            </div>
-            {[
-              { title: "SHOP", links: ["All", "Drop 001 — Tide", "Lookbook", "Gift Cards"] },
-              { title: "BRAND", links: ["About", "Manifesto", "Stockists", "Press"] },
-              { title: "SOCIAL", links: ["Instagram ↗", "TikTok ↗", "Discord ↗", "hello@drenched.co"] },
-            ].map((col) => (
-              <div key={col.title}>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, letterSpacing: "0.4em", color: "#00E5FF", marginBottom: 24 }}>
-                  {col.title}
-                </div>
-                {col.links.map((l) => (
-                  <a key={l} href="#" style={{
-                    display: "block", fontFamily: "'JetBrains Mono', monospace", fontSize: 12,
-                    color: "rgba(255,255,255,0.5)", textDecoration: "none", marginBottom: 10,
-                    transition: "color 0.2s",
-                  }}
-                    onMouseEnter={(e) => (e.target.style.color = "#00E5FF")}
-                    onMouseLeave={(e) => (e.target.style.color = "rgba(255,255,255,0.5)")}>
-                    {l}
-                  </a>
-                ))}
-              </div>
-            ))}
+          <div style={{ display: "flex", gap: 8, maxWidth: 400, margin: "0 auto 40px", flexWrap: "wrap", justifyContent: "center" }}>
+            <input type="email" placeholder="your@email.com" style={{
+              flex: 1, minWidth: 210, padding: "12px 16px",
+              background: "rgba(255,255,255,.05)",
+              border: "1px solid rgba(255,255,255,.15)",
+              color: "white", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, outline: "none",
+            }} />
+            <button style={{
+              fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: ".25em",
+              padding: "12px 22px", background: "#00E5FF", color: "#000",
+              border: "none", cursor: "pointer", fontWeight: 700,
+            }}>GET IN ↓</button>
           </div>
-
-          <div style={{
-            paddingTop: 28, borderTop: "1px solid rgba(255,255,255,0.05)",
-            display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 18,
-          }}>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "rgba(255,255,255,0.25)", letterSpacing: "0.2em" }}>
-              © 2026 DRENCHED. ALL RIGHTS RESERVED.
-            </div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "rgba(255,255,255,0.25)", letterSpacing: "0.2em" }}>
-              DRENCHED IN DRIP — TLV × NYC
-            </div>
+          <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "rgba(255,255,255,.22)", letterSpacing: ".2em" }}>
+            © 2026 DRENCHED. DRENCHED IN DRIP — TLV × NYC
           </div>
         </div>
       </footer>
