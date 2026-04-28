@@ -3,3 +3,4 @@ html, body { background: #000308; overflow-x: hidden; }
 body { font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; cursor: none; }
 @media (max-width: 768px) { body { cursor: auto; } }
 ::selection { background: #00E5FF; color: #000; }
+
